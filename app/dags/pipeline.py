@@ -6,9 +6,9 @@ import boto3
 
 def ingest_data():
     data = pd.DataFrame({"product": ["red shoes"], "category": ["footwear"]})
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3",region_name="ap-southeast-1")
     data.to_csv("/tmp/data.csv")
-    s3.upload_file("/tmp/data.csv", "your-bucket-name", "data.csv")
+    s3.upload_file("/tmp/data.csv", "intent-based-search-data", "data.csv")
     print("Data ingested")
 
 with DAG("ecommerce_pipeline", start_date=datetime(2025, 4, 1), schedule_interval="@daily", catchup=False) as dag:
