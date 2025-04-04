@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5433:5432'
+
+  airflow-webserver:
+    build:
+      context: .. # Updated to point to the parent directory
+      dockerfile: docker/airflow.Dockerfile
+    command: airflow webserver -p 8080
+    ports:
+      - '8080:8080'
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ../app/dags:/opt/airflow/dags # Updated to use the correct relative path
+    depends_on:
+      - postgres
+
+  airflow-scheduler:
+    build:
+      context: .. # Updated to point to the parent directory
+      dockerfile: docker/airflow.Dockerfile
+    command: airflow scheduler
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ../app/dags:/opt/airflow/dags # Updated to use the correct relative path
+    depends_on:
+      - postgres
+
+  api:
+    build:
+      context: .. # Updated to point to the parent directory
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - '8000:8000'
+      - '8001:8001'
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+    depends_on:
+      - mlflow # Corrected dependency to mlflow
+    volumes:
+      - ./app/model:/app/model
+      - ./.git:/app/.git # Mount Git metadata
+
+  mlflow:
+    image: python:3.11-slim
+    command: >
+      bash -c "pip install mlflow==2.11.0 psycopg2-binary==2.9.9 && 
+               mlflow server --host 0.0.0.0 --port 5000 
+               --backend-store-uri sqlite:///mlflow.db 
+               --default-artifact-root ./mlruns"
+
+
+    ports:
+      - '5001:5000' # Corrected port mapping for consistency
+    volumes:
+      - ./mlruns:/mlruns
+      - ./mlflow.db:/mlflow.db
+
+volumes:
+  postgres_data:
