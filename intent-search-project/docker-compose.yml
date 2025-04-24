@@ -1,0 +1,85 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'airflow']
+      interval: 5s
+      retries: 5
+
+  airflow-webserver:
+    build: .
+    command: airflow webserver --port 8080
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/app/airflow/dags
+      - ./airflow/logs:/app/airflow/logs
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./.env:/app/.env
+    ports:
+      - '8080:8080'
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:8080/health']
+      interval: 30s
+      retries: 5
+
+  airflow-scheduler:
+    build: .
+    command: airflow scheduler
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/app/airflow/dags
+      - ./airflow/logs:/app/airflow/logs
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./.env:/app/.env
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    volumes:
+      - ./mlruns:/mlruns
+      - ./scripts:/app/scripts
+      - ./models:/app/models
+    ports:
+      - '5001:5000'
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlruns/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlruns
+
+  app:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./.env:/app/.env
+    depends_on:
+      - mlflow
+
+volumes:
+  postgres_data:
+  mlruns:
