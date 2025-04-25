@@ -6,6 +6,8 @@ from transformers import pipeline
 
 app = FastAPI()
 
+print('hjelll')
+
 @app.get("/search")
 async def search(query: str):
     # Classify intent

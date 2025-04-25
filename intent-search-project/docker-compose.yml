@@ -1,57 +1,78 @@
 version: '3.8'
+
 services:
   postgres:
     image: postgres:13
     environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD', 'pg_isready', '-U', 'airflow']
-      interval: 5s
-      retries: 5
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER']
+    networks:
+      - backend
 
-  airflow-webserver:
-    build: .
-    command: airflow webserver --port 8080
+  airflow-init:
+    image: apache/airflow:2.5.0
+    entrypoint: airflow db init
     depends_on:
       - postgres
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: >
+      bash -c "airflow users create --username admin --password admin"
+
+
+    networks:
+      - backend
+
+  airflow-webserver:
+    image: apache/airflow:2.5.0
+    command: airflow webserver --port 8080
+    depends_on:
+      - airflow-init
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
     volumes:
-      - ./airflow/dags:/app/airflow/dags
-      - ./airflow/logs:/app/airflow/logs
-      - ./scripts:/app/scripts
-      - ./data:/app/data
-      - ./models:/app/models
-      - ./.env:/app/.env
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./scripts:/opt/airflow/scripts
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+      - ./.env:/opt/airflow/.env
     ports:
       - '8080:8080'
     healthcheck:
       test: ['CMD', 'curl', '--fail', 'http://localhost:8080/health']
-      interval: 30s
-      retries: 5
+    networks:
+      - backend
 
   airflow-scheduler:
-    build: .
+    image: apache/airflow:2.5.0
     command: airflow scheduler
     depends_on:
-      - postgres
+      - airflow-webserver
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
     volumes:
-      - ./airflow/dags:/app/airflow/dags
-      - ./airflow/logs:/app/airflow/logs
-      - ./scripts:/app/scripts
-      - ./data:/app/data
-      - ./models:/app/models
-      - ./.env:/app/.env
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./scripts:/opt/airflow/scripts
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+      - ./.env:/opt/airflow/.env
+    networks:
+      - backend
 
   mlflow:
     build:
@@ -64,8 +85,10 @@ services:
     ports:
       - '5001:5000'
     environment:
-      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlruns/mlflow.db
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlruns/mlflow.db # change to postgres later if needed
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlruns
+    networks:
+      - backend
 
   app:
     build: .
@@ -79,7 +102,12 @@ services:
       - ./.env:/app/.env
     depends_on:
       - mlflow
+    networks:
+      - backend
 
 volumes:
   postgres_data:
   mlruns:
+
+networks:
+  backend:
